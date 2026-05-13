@@ -147,24 +147,21 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
   <script type="module">
-    // Import functional Firestore modules via unpkg CDN
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
     /* ==========================================
        1. FIREBASE CONFIGURATION VARIABLES
-       Paste your Firebase configuration object below.
        ========================================== */
     const firebaseConfig = {
-      apiKey: "",
-      authDomain: "",
-      projectId: "",
-      storageBucket: "",
-      messagingSenderId: "",
-      appId: ""
+      apiKey: "AIzaSyA6_GAj9kDj4ud_sBO7yurYaLQd2Q7v-4o",
+      authDomain: "lettice-sky-journal.firebaseapp.com",
+      projectId: "lettice-sky-journal",
+      storageBucket: "lettice-sky-journal.firebasestorage.app",
+      messagingSenderId: "1086416719034",
+      appId: "1:1086416719034:web:5f385324b9a0655c508683"
     };
 
-    // Initialize Firebase Cloud App & Firestore DB
     let db = null;
     try {
       const app = initializeApp(firebaseConfig);
@@ -179,39 +176,78 @@
     const map = L.map('map', { zoomControl: false }).setView([20, 0], 2);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // Using soft, elegant OpenStreetMap CartoDB Positron baseline tiles
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; OpenStreetMap &copy; CartoDB',
       subdomains: 'abcd',
       maxZoom: 19
     }).addTo(map);
 
-    // Custom Icon Definition for Celebratory Markers
     const victoryIcon = L.divIcon({
       className: 'bg-transparent',
       html: `<div class="relative -top-3 -left-3 bg-amber-400 text-white rounded-full p-1.5 shadow-md border-2 border-white transform transition hover:scale-125 flex items-center justify-center w-7 h-7">⭐</div>`,
       iconSize: [28, 28]
     });
 
-    // Tracking active map drawing layers to safely clear on database refreshes
     let mapLayers = [];
 
     /* ==========================================
-       3. GEOLOCATION & MATHEMATICAL CALCULATIONS
+       3. STATIC IATA DB & GEO-LOOKUP LOGIC
        ========================================== */
     
-    // Convert text locations to exact Latitude/Longitude via Nominatim API
-    async function geocodeCity(place) {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(place)}&limit=1`;
+    // High-speed static index for major hubs to bypass network geocoding delays entirely
+    const IATA_DB = {
+      "LHR": { lat: 51.4700, lon: -0.4543, name: "London Heathrow" },
+      "LGW": { lat: 51.1537, lon: -0.1821, name: "London Gatwick" },
+      "CDG": { lat: 49.0097, lon: 2.5479, name: "Paris Charles de Gaulle" },
+      "ORY": { lat: 48.7262, lon: 2.3652, name: "Paris Orly" },
+      "JFK": { lat: 40.6413, lon: -73.7781, name: "New York JFK" },
+      "EWR": { lat: 40.6895, lon: -74.1745, name: "New York Newark" },
+      "LAX": { lat: 33.9416, lon: -118.4085, name: "Los Angeles LAX" },
+      "SFO": { lat: 37.6213, lon: -122.3790, name: "San Francisco SFO" },
+      "ORD": { lat: 41.9742, lon: -87.9073, name: "Chicago O'Hare" },
+      "DFW": { lat: 32.8998, lon: -97.0403, name: "Dallas/Fort Worth" },
+      "ATL": { lat: 33.6407, lon: -84.4277, name: "Atlanta Hartsfield" },
+      "AMS": { lat: 52.3105, lon: 4.7683, name: "Amsterdam Schiphol" },
+      "FRA": { lat: 50.0379, lon: 8.5622, name: "Frankfurt Airport" },
+      "DXB": { lat: 25.2532, lon: 55.3657, name: "Dubai International" },
+      "SIN": { lat: 1.3644, lon: 103.9915, name: "Singapore Changi" },
+      "HKG": { lat: 22.3080, lon: 113.9185, name: "Hong Kong International" },
+      "HND": { lat: 35.5494, lon: 139.7798, name: "Tokyo Haneda" },
+      "NRT": { lat: 35.7720, lon: 140.3929, name: "Tokyo Narita" },
+      "SYD": { lat: -33.9461, lon: 151.1772, name: "Sydney Kingsford Smith" },
+      "MEL": { lat: -37.6690, lon: 144.8410, name: "Melbourne Airport" },
+      "YYZ": { lat: 43.6777, lon: -79.6248, name: "Toronto Pearson" },
+      "YVR": { lat: 49.1967, lon: -123.1815, name: "Vancouver International" }
+    };
+
+    // Unified node lookup that checks cache first, then fails over to Nominatim API
+    async function resolveCoordinates(placeInput) {
+      const sanitized = placeInput.trim().toUpperCase();
+      
+      // Optimization 1 & 3: Instant Memory-mapped database resolution for recognized IATA string formats
+      if (IATA_DB[sanitized]) {
+        return {
+          lat: IATA_DB[sanitized].lat,
+          lon: IATA_DB[sanitized].lon,
+          name: IATA_DB[sanitized].name
+        };
+      }
+
+      // External API Translation engine loop triggered strictly as failover runtime backup
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(placeInput)}&limit=1`;
       const res = await fetch(url);
       const data = await res.json();
-      if (!data || data.length === 0) throw new Error(`Could not find location: ${place}`);
-      return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), name: data[0].display_name.split(',')[0] };
+      if (!data || data.length === 0) throw new Error(`Location parsing check failed: ${placeInput}`);
+      
+      return { 
+        lat: parseFloat(data[0].lat), 
+        lon: parseFloat(data[0].lon), 
+        name: data[0].display_name.split(',')[0] 
+      };
     }
 
-    // Standard Haversine formula calculation for shortest Earth distance
     function calculateHaversine(lat1, lon1, lat2, lon2) {
-      const R = 6371; // Radius of Earth in KM
+      const R = 6371; 
       const dLat = (lat2 - lat1) * Math.PI / 180;
       const dLon = (lon2 - lon1) * Math.PI / 180;
       const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -222,21 +258,18 @@
       return { km: Math.round(km), miles: Math.round(km * 0.621371) };
     }
 
-    // Generate soft, elegantly curved mathematical arcs connecting points using vector midpoint manipulation
     function getCurvedPoints(lat1, lon1, lat2, lon2) {
       const points = [];
       const midLat = (lat1 + lat2) / 2;
       const midLon = (lon1 + lon2) / 2;
       const dLat = lat2 - lat1;
       const dLon = lon2 - lon1;
-      // Calculate a normalized perpendicular vector offset
       const perpLat = -dLon;
       const perpLon = dLat;
-      const curveHeight = 0.18; // Intensity factor of the curve
+      const curveHeight = 0.18; 
       const cLat = midLat + perpLat * curveHeight;
       const cLon = midLon + perpLon * curveHeight;
       
-      // Calculate 20 intermediate points using a pure Quadratic Bezier Matrix equation
       for (let t = 0; t <= 1; t += 0.05) {
         const pLat = (1-t)*(1-t)*lat1 + 2*(1-t)*t*cLat + t*t*lat2;
         const pLon = (1-t)*(1-t)*lon1 + 2*(1-t)*t*cLon + t*t*lon2;
@@ -279,12 +312,11 @@
       }
     }
 
-    // Primary UI renderer processing real-time array updates
+    // Optimization 2: Client rendering maps strictly using verified properties cached in DB documents
     function renderAppDisplay(flights) {
       const container = document.getElementById('logs-container');
       container.innerHTML = '';
       
-      // Purge stale marker rendering layers
       mapLayers.forEach(l => map.removeLayer(l));
       mapLayers = [];
 
@@ -301,7 +333,6 @@
         totalKm += f.distanceKm || 0;
         totalMiles += f.distanceMiles || 0;
 
-        // Render card
         const dateFormatted = new Date(f.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         const card = document.createElement('div');
         card.className = "bg-sky-50/50 p-3.5 rounded-xl border border-sky-100 flex items-center justify-between transition hover:bg-sky-50";
@@ -317,17 +348,15 @@
         `;
         container.appendChild(card);
 
-        // Map rendering logic
+        // Immediate layout render logic bypasses network checks completely using directly embedded JSON document data
         if (f.originCoords && f.destCoords) {
           const originPt = [f.originCoords.lat, f.originCoords.lon];
           const destPt = [f.destCoords.lat, f.destCoords.lon];
           mapBounds.push(originPt, destPt);
 
-          // Custom victory endpoints
           const mOrig = L.marker(originPt, { icon: victoryIcon }).bindPopup(`<b>${f.originName}</b>`).addTo(map);
           const mDest = L.marker(destPt, { icon: victoryIcon }).bindPopup(`<b>${f.destName}</b><br>Arrived with courage!`).addTo(map);
           
-          // Draw soft structural connecting arcs
           const curvePts = getCurvedPoints(...originPt, ...destPt);
           const path = L.polyline(curvePts, { color: '#0EA5E9', weight: 2.5, opacity: 0.6, dashArray: '6, 6' }).addTo(map);
           
@@ -335,20 +364,17 @@
         }
       });
 
-      // Update counters dynamically
       document.getElementById('total-flights').innerText = flights.length;
       document.getElementById('total-km').innerText = totalKm.toLocaleString();
       document.getElementById('total-miles').innerText = totalMiles.toLocaleString();
       updateAchievementMessage(flights.length, totalKm);
 
-      // Re-center bounding matrices dynamically if entries exist
       if (mapBounds.length > 0) {
         map.fitBounds(mapBounds, { padding: [40, 40], maxZoom: 5 });
       } else {
         map.setView([20, 0], 2);
       }
 
-      // Attach deletion sequence bindings safely
       document.querySelectorAll('.delete-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const id = e.currentTarget.getAttribute('data-id');
@@ -357,7 +383,6 @@
               await deleteDoc(doc(db, "lettice_flights", id));
               triggerToast("Entry archived smoothly.");
             } else {
-              // In-memory fallback support
               localFlightsMem = localFlightsMem.filter(x => x.id !== id);
               renderAppDisplay(localFlightsMem);
             }
@@ -369,23 +394,22 @@
     /* ==========================================
        5. REAL-TIME DATABASE SYNCHRONIZATION
        ========================================== */
-    let localFlightsMem = []; // Standby memory for fallback initialization
+    let localFlightsMem = []; 
 
     if (db) {
-      // Connect active document state hooks ordered by exact travel dates descending
       const q = query(collection(db, "lettice_flights"), orderBy("date", "desc"));
       onSnapshot(q, (snapshot) => {
         const flights = [];
         snapshot.forEach((doc) => {
           flights.push({ id: doc.id, ...doc.data() });
         });
+        // Renders arrays natively client-side using saved pre-cached properties without additional coordinate mapping queries
         renderAppDisplay(flights);
       }, (err) => {
         console.error("Firestore read fault:", err);
         triggerToast("Storage key read unlinked. Validating parameters...");
       });
     } else {
-      // Initial render setup bypass for blank setup keys
       renderAppDisplay([]);
     }
 
@@ -399,22 +423,21 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const dateVal = document.getElementById('travel-date').value;
-      const originVal = document.getElementById('origin').value.trim();
-      const destVal = document.getElementById('destination').value.trim();
+      const originVal = document.getElementById('origin').value;
+      const destVal = document.getElementById('destination').value;
 
-      // Lock user interface parameters safely during compute loops
       submitBtn.disabled = true;
-      submitBtn.innerHTML = `<span>Geocoding nodes...</span>`;
+      submitBtn.innerHTML = `<span>Resolving routing nodes...</span>`;
       loader.classList.remove('opacity-0', 'pointer-events-none');
 
       try {
-        // Run OpenStreetMap API spatial matrix translation calls
-        const originRes = await geocodeCity(originVal);
-        const destRes = await geocodeCity(destVal);
+        // Runs unified routing processing steps strictly once on physical submission trigger event
+        const originRes = await resolveCoordinates(originVal);
+        const destRes = await resolveCoordinates(destVal);
 
-        // Derive structural baseline numbers
         const distances = calculateHaversine(originRes.lat, originRes.lon, destRes.lat, destRes.lon);
 
+        // Pre-calculating spatial configurations cleanly directly into base record properties
         const payloadObj = {
           date: dateVal,
           originName: originRes.name,
@@ -427,12 +450,9 @@
         };
 
         if (db) {
-          // Push strictly configured structured nodes safely directly to Cloud base
           await addDoc(collection(db, "lettice_flights"), payloadObj);
         } else {
-          // Push locally if Firebase config array parameters remain unentered
           localFlightsMem.unshift({ id: String(Date.now()), ...payloadObj });
-          // Sort chronologically (newest top)
           localFlightsMem.sort((a,b) => new Date(b.date) - new Date(a.date));
           renderAppDisplay(localFlightsMem);
         }
@@ -441,7 +461,7 @@
         triggerConfetti();
         triggerToast(`Victory logged! Added ${distances.km} km to her story.`);
       } catch (err) {
-        alert(`Spatial query translation error: ${err.message}. Please double check city or airport names.`);
+        alert(`Spatial query translation error: ${err.message}. Please verify the city name or valid IATA code format.`);
       } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = `<span>Save Victory to Log</span>`;
@@ -449,7 +469,6 @@
       }
     });
 
-    // Populate input field date automagically with current system time strings
     document.getElementById('travel-date').valueAsDate = new Date();
   </script>
 </body>
