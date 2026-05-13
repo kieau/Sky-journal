@@ -194,7 +194,6 @@
        3. STATIC IATA DB & GEO-LOOKUP LOGIC
        ========================================== */
     
-    // High-speed static index for major hubs to bypass network geocoding delays entirely
     const IATA_DB = {
       "LHR": { lat: 51.4700, lon: -0.4543, name: "London Heathrow" },
       "LGW": { lat: 51.1537, lon: -0.1821, name: "London Gatwick" },
@@ -220,11 +219,9 @@
       "YVR": { lat: 49.1967, lon: -123.1815, name: "Vancouver International" }
     };
 
-    // Unified node lookup that checks cache first, then fails over to Nominatim API
     async function resolveCoordinates(placeInput) {
       const sanitized = placeInput.trim().toUpperCase();
       
-      // Optimization 1 & 3: Instant Memory-mapped database resolution for recognized IATA string formats
       if (IATA_DB[sanitized]) {
         return {
           lat: IATA_DB[sanitized].lat,
@@ -233,7 +230,6 @@
         };
       }
 
-      // External API Translation engine loop triggered strictly as failover runtime backup
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(placeInput)}&limit=1`;
       const res = await fetch(url);
       const data = await res.json();
@@ -258,23 +254,45 @@
       return { km: Math.round(km), miles: Math.round(km * 0.621371) };
     }
 
+    // UPDATED GEOMETRY LOGIC: Perfect anchoring and robust interpolation
     function getCurvedPoints(lat1, lon1, lat2, lon2) {
       const points = [];
+      
+      // Calculate shortest-path longitude delta to prevent wrong-way map wraps
+      let dLon = lon2 - lon1;
+      if (dLon > 180) {
+        dLon -= 360;
+      } else if (dLon < -180) {
+        dLon += 360;
+      }
+      
       const midLat = (lat1 + lat2) / 2;
-      const midLon = (lon1 + lon2) / 2;
+      const midLon = lon1 + (dLon / 2);
+      
       const dLat = lat2 - lat1;
-      const dLon = lon2 - lon1;
       const perpLat = -dLon;
       const perpLon = dLat;
       const curveHeight = 0.18; 
+      
       const cLat = midLat + perpLat * curveHeight;
       const cLon = midLon + perpLon * curveHeight;
       
-      for (let t = 0; t <= 1; t += 0.05) {
+      const steps = 20;
+      
+      // Guarantee initial anchor strictly begins at the exact origin
+      points.push([lat1, lon1]);
+      
+      // Loop strictly using integers to eliminate floating point accumulation misses
+      for (let i = 1; i < steps; i++) {
+        const t = i / steps;
         const pLat = (1-t)*(1-t)*lat1 + 2*(1-t)*t*cLat + t*t*lat2;
-        const pLon = (1-t)*(1-t)*lon1 + 2*(1-t)*t*cLon + t*t*lon2;
+        const pLon = (1-t)*(1-t)*lon1 + 2*(1-t)*t*cLon + t*t*(lon1 + dLon);
         points.push([pLat, pLon]);
       }
+      
+      // Guarantee final anchor strictly terminates at the exact destination
+      points.push([lat2, lon2]);
+      
       return points;
     }
 
@@ -312,7 +330,6 @@
       }
     }
 
-    // Optimization 2: Client rendering maps strictly using verified properties cached in DB documents
     function renderAppDisplay(flights) {
       const container = document.getElementById('logs-container');
       container.innerHTML = '';
@@ -348,7 +365,6 @@
         `;
         container.appendChild(card);
 
-        // Immediate layout render logic bypasses network checks completely using directly embedded JSON document data
         if (f.originCoords && f.destCoords) {
           const originPt = [f.originCoords.lat, f.originCoords.lon];
           const destPt = [f.destCoords.lat, f.destCoords.lon];
@@ -403,7 +419,6 @@
         snapshot.forEach((doc) => {
           flights.push({ id: doc.id, ...doc.data() });
         });
-        // Renders arrays natively client-side using saved pre-cached properties without additional coordinate mapping queries
         renderAppDisplay(flights);
       }, (err) => {
         console.error("Firestore read fault:", err);
@@ -431,13 +446,11 @@
       loader.classList.remove('opacity-0', 'pointer-events-none');
 
       try {
-        // Runs unified routing processing steps strictly once on physical submission trigger event
         const originRes = await resolveCoordinates(originVal);
         const destRes = await resolveCoordinates(destVal);
 
         const distances = calculateHaversine(originRes.lat, originRes.lon, destRes.lat, destRes.lon);
 
-        // Pre-calculating spatial configurations cleanly directly into base record properties
         const payloadObj = {
           date: dateVal,
           originName: originRes.name,
