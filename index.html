@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  
+  <title>Lettice's Sky Journal</title>
+  <meta name="theme-color" content="#E0F2FE" />
+  <link rel="icon" href="icon.png" type="image/png" />
+  <link rel="apple-touch-icon" href="icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Sky Journal" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,400&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Poppins', 'sans-serif'],
+            serif: ['"Playfair Display"', 'serif'],
+          },
+          colors: {
+            sky: {
+              50: '#F0F9FF',
+              100: '#E0F2FE',
+              500: '#0EA5E9',
+              600: '#0284C7',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  
+  <style>
+    /* Custom scrollbars for clean dashboard look */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #F0F9FF; }
+    ::-webkit-scrollbar-thumb { background: #BAE6FD; border-radius: 4px; }
+    /* Hide Leaflet outline on focus */
+    .leaflet-container { font-family: 'Poppins', sans-serif; outline: 0 !important; }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-sky-50 via-amber-50/30 to-sky-100 min-h-screen text-slate-700 antialiased pb-12">
+
+  <div id="toast" class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-md px-6 py-3 rounded-full shadow-lg border border-sky-200 text-sky-700 font-medium text-sm transition-all duration-500 translate-y-[-150%] opacity-0 z-50 flex items-center space-x-2">
+    <svg class="w-5 h-5 text-amber-500" fill="currentColor" viewBox="0 0 20 20"><path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z"/></svg>
+    <span id="toast-message">Flight successfully logged!</span>
+  </div>
+
+  <div class="max-w-6xl mx-auto px-4 pt-8">
+    
+    <header class="text-center mb-10">
+      <div class="inline-block bg-sky-100/60 border border-sky-200/80 px-4 py-1.5 rounded-full text-xs font-semibold text-sky-600 tracking-wider uppercase mb-3 shadow-sm">
+        ✨ Personal Milestone Tracker
+      </div>
+      <h1 class="font-serif text-4xl md:text-5xl text-slate-800 font-bold mb-3">
+        Lettice's Sky Journal
+      </h1>
+      <p class="font-serif italic text-slate-600 max-w-2xl mx-auto text-base md:text-lg px-4">
+        "Every flight is a victory over fear. This is your story of courage, one sky at a time."
+      </p>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+      <div class="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-sm border border-sky-100 text-center transform transition duration-300 hover:scale-[1.01]">
+        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Flights Conquered</h3>
+        <p id="total-flights" class="text-4xl font-bold text-sky-600">0</p>
+        <span class="text-xs text-amber-500 font-medium mt-2 inline-block bg-amber-50 px-2.5 py-0.5 rounded-full">Pure Courage</span>
+      </div>
+      <div class="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-sm border border-sky-100 text-center transform transition duration-300 hover:scale-[1.01]">
+        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Distance Traveled</h3>
+        <p class="text-4xl font-bold text-sky-600"><span id="total-km">0</span> <span class="text-base font-normal text-slate-500">km</span></p>
+        <p class="text-xs text-slate-400 mt-1"><span id="total-miles">0</span> miles explored</p>
+      </div>
+      <div class="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-sm border border-sky-100 flex flex-col justify-center items-center text-center transform transition duration-300 hover:scale-[1.01]">
+        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Current Milestone</h3>
+        <p id="achievement-text" class="text-sm font-medium text-slate-700 mt-1">Loading your uplifting journey...</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      
+      <div class="space-y-8">
+        
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-sky-100">
+          <h2 class="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <svg class="w-5 h-5 text-sky-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"></path></svg>
+            Log a Victorious Flight
+          </h2>
+          <form id="flight-form" class="space-y-4">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1" for="travel-date">Date of Travel</label>
+              <input required type="date" id="travel-date" class="w-full text-sm px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-400 transition" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1" for="origin">Origin (City or Airport Code)</label>
+              <input required type="text" id="origin" placeholder="e.g., London or LHR" class="w-full text-sm px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-400 transition" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1" for="destination">Destination (City or Airport Code)</label>
+              <input required type="text" id="destination" placeholder="e.g., Paris or CDG" class="w-full text-sm px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-400 transition" />
+            </div>
+            <button type="submit" id="submit-btn" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-medium text-sm py-2.5 rounded-xl shadow-md hover:shadow-sky-200 transition duration-200 flex items-center justify-center gap-2">
+              <span>Save Victory to Log</span>
+            </button>
+          </form>
+        </div>
+
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-sky-100 flex flex-col h-[400px]">
+          <h2 class="text-lg font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            <svg class="w-5 h-5 text-amber-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
+            Chronological Log
+          </h2>
+          <div id="logs-container" class="flex-1 overflow-y-auto space-y-3 pr-1">
+            <div class="text-center py-10 text-slate-400 text-sm">
+              Connecting to secure cloud base...
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="lg:col-span-2 flex flex-col">
+        <div class="bg-white rounded-2xl p-2 shadow-sm border border-sky-100 flex-1 min-h-[500px] lg:min-h-full relative overflow-hidden">
+          <div id="map" class="w-full h-full rounded-xl z-10"></div>
+          
+          <div id="map-loader" class="absolute inset-0 bg-white/70 backdrop-blur-sm z-20 flex flex-col items-center justify-center transition-opacity duration-300 opacity-0 pointer-events-none">
+            <div class="w-10 h-10 border-4 border-sky-200 border-t-sky-500 rounded-full animate-spin mb-2"></div>
+            <p class="text-xs font-medium text-slate-600">Mapping flight coordinates...</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <script type="module">
+    // Import functional Firestore modules via unpkg CDN
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+    /* ==========================================
+       1. FIREBASE CONFIGURATION VARIABLES
+       Paste your Firebase configuration object below.
+       ========================================== */
+    const firebaseConfig = {
+      apiKey: "",
+      authDomain: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
+    };
+
+    // Initialize Firebase Cloud App & Firestore DB
+    let db = null;
+    try {
+      const app = initializeApp(firebaseConfig);
+      db = getFirestore(app);
+    } catch (e) {
+      console.warn("Firebase config is blank or invalid. UI running in memory-only standby mode until keys are pasted.");
+    }
+
+    /* ==========================================
+       2. MAPPING ENGINE INITIALIZATION (Leaflet)
+       ========================================== */
+    const map = L.map('map', { zoomControl: false }).setView([20, 0], 2);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    // Using soft, elegant OpenStreetMap CartoDB Positron baseline tiles
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CartoDB',
+      subdomains: 'abcd',
+      maxZoom: 19
+    }).addTo(map);
+
+    // Custom Icon Definition for Celebratory Markers
+    const victoryIcon = L.divIcon({
+      className: 'bg-transparent',
+      html: `<div class="relative -top-3 -left-3 bg-amber-400 text-white rounded-full p-1.5 shadow-md border-2 border-white transform transition hover:scale-125 flex items-center justify-center w-7 h-7">⭐</div>`,
+      iconSize: [28, 28]
+    });
+
+    // Tracking active map drawing layers to safely clear on database refreshes
+    let mapLayers = [];
+
+    /* ==========================================
+       3. GEOLOCATION & MATHEMATICAL CALCULATIONS
+       ========================================== */
+    
+    // Convert text locations to exact Latitude/Longitude via Nominatim API
+    async function geocodeCity(place) {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(place)}&limit=1`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!data || data.length === 0) throw new Error(`Could not find location: ${place}`);
+      return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), name: data[0].display_name.split(',')[0] };
+    }
+
+    // Standard Haversine formula calculation for shortest Earth distance
+    function calculateHaversine(lat1, lon1, lat2, lon2) {
+      const R = 6371; // Radius of Earth in KM
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const km = R * c;
+      return { km: Math.round(km), miles: Math.round(km * 0.621371) };
+    }
+
+    // Generate soft, elegantly curved mathematical arcs connecting points using vector midpoint manipulation
+    function getCurvedPoints(lat1, lon1, lat2, lon2) {
+      const points = [];
+      const midLat = (lat1 + lat2) / 2;
+      const midLon = (lon1 + lon2) / 2;
+      const dLat = lat2 - lat1;
+      const dLon = lon2 - lon1;
+      // Calculate a normalized perpendicular vector offset
+      const perpLat = -dLon;
+      const perpLon = dLat;
+      const curveHeight = 0.18; // Intensity factor of the curve
+      const cLat = midLat + perpLat * curveHeight;
+      const cLon = midLon + perpLon * curveHeight;
+      
+      // Calculate 20 intermediate points using a pure Quadratic Bezier Matrix equation
+      for (let t = 0; t <= 1; t += 0.05) {
+        const pLat = (1-t)*(1-t)*lat1 + 2*(1-t)*t*cLat + t*t*lat2;
+        const pLon = (1-t)*(1-t)*lon1 + 2*(1-t)*t*cLon + t*t*lon2;
+        points.push([pLat, pLon]);
+      }
+      return points;
+    }
+
+    /* ==========================================
+       4. INTERACTION, RENDERING & NOTIFICATIONS
+       ========================================== */
+
+    function triggerToast(text) {
+      const t = document.getElementById('toast');
+      document.getElementById('toast-message').innerText = text;
+      t.classList.remove('translate-y-[-150%]', 'opacity-0');
+      t.classList.add('translate-y-0', 'opacity-100');
+      setTimeout(() => {
+        t.classList.remove('translate-y-0', 'opacity-100');
+        t.classList.add('translate-y-[-150%]', 'opacity-0');
+      }, 3500);
+    }
+
+    function triggerConfetti() {
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 }, colors: ['#0EA5E9', '#F59E0B', '#BAE6FD'] });
+    }
+
+    function updateAchievementMessage(totalFlights, totalKm) {
+      const textEl = document.getElementById('achievement-text');
+      if (totalFlights === 0) {
+        textEl.innerText = "The horizon is waiting. Log your first brave step!";
+      } else if (totalFlights === 1) {
+        textEl.innerText = "Incredible start, Lettice! You've broken the ice. 🎉";
+      } else if (totalFlights < 5) {
+        textEl.innerText = `Look at you go! ${totalFlights} flights conquered. Courage looks beautiful on you.`;
+      } else if (totalFlights < 10) {
+        textEl.innerText = `Unstoppable! You've navigated ${totalKm.toLocaleString()} km of pure freedom.`;
+      } else {
+        textEl.innerText = "A genuine sky explorer! Fear has no holding power over you anymore. ✨";
+      }
+    }
+
+    // Primary UI renderer processing real-time array updates
+    function renderAppDisplay(flights) {
+      const container = document.getElementById('logs-container');
+      container.innerHTML = '';
+      
+      // Purge stale marker rendering layers
+      mapLayers.forEach(l => map.removeLayer(l));
+      mapLayers = [];
+
+      let totalKm = 0;
+      let totalMiles = 0;
+
+      if (flights.length === 0) {
+        container.innerHTML = `<div class="text-center py-12 text-slate-400 text-sm">No flights recorded yet. The sky is yours to paint!</div>`;
+      }
+
+      const mapBounds = [];
+
+      flights.forEach(f => {
+        totalKm += f.distanceKm || 0;
+        totalMiles += f.distanceMiles || 0;
+
+        // Render card
+        const dateFormatted = new Date(f.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const card = document.createElement('div');
+        card.className = "bg-sky-50/50 p-3.5 rounded-xl border border-sky-100 flex items-center justify-between transition hover:bg-sky-50";
+        card.innerHTML = `
+          <div class="min-w-0 flex-1 mr-2">
+            <div class="text-xs font-semibold text-sky-600 mb-0.5">${dateFormatted}</div>
+            <div class="text-sm font-bold text-slate-700 truncate">${f.originName} → ${f.destName}</div>
+            <div class="text-xs text-slate-400">${f.distanceKm.toLocaleString()} km / ${f.distanceMiles.toLocaleString()} mi</div>
+          </div>
+          <button data-id="${f.id}" class="delete-btn text-slate-300 hover:text-red-500 p-1.5 transition rounded-lg">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          </button>
+        `;
+        container.appendChild(card);
+
+        // Map rendering logic
+        if (f.originCoords && f.destCoords) {
+          const originPt = [f.originCoords.lat, f.originCoords.lon];
+          const destPt = [f.destCoords.lat, f.destCoords.lon];
+          mapBounds.push(originPt, destPt);
+
+          // Custom victory endpoints
+          const mOrig = L.marker(originPt, { icon: victoryIcon }).bindPopup(`<b>${f.originName}</b>`).addTo(map);
+          const mDest = L.marker(destPt, { icon: victoryIcon }).bindPopup(`<b>${f.destName}</b><br>Arrived with courage!`).addTo(map);
+          
+          // Draw soft structural connecting arcs
+          const curvePts = getCurvedPoints(...originPt, ...destPt);
+          const path = L.polyline(curvePts, { color: '#0EA5E9', weight: 2.5, opacity: 0.6, dashArray: '6, 6' }).addTo(map);
+          
+          mapLayers.push(mOrig, mDest, path);
+        }
+      });
+
+      // Update counters dynamically
+      document.getElementById('total-flights').innerText = flights.length;
+      document.getElementById('total-km').innerText = totalKm.toLocaleString();
+      document.getElementById('total-miles').innerText = totalMiles.toLocaleString();
+      updateAchievementMessage(flights.length, totalKm);
+
+      // Re-center bounding matrices dynamically if entries exist
+      if (mapBounds.length > 0) {
+        map.fitBounds(mapBounds, { padding: [40, 40], maxZoom: 5 });
+      } else {
+        map.setView([20, 0], 2);
+      }
+
+      // Attach deletion sequence bindings safely
+      document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = e.currentTarget.getAttribute('data-id');
+          if (confirm("Gently clear this logged entry?")) {
+            if (db) {
+              await deleteDoc(doc(db, "lettice_flights", id));
+              triggerToast("Entry archived smoothly.");
+            } else {
+              // In-memory fallback support
+              localFlightsMem = localFlightsMem.filter(x => x.id !== id);
+              renderAppDisplay(localFlightsMem);
+            }
+          }
+        });
+      });
+    }
+
+    /* ==========================================
+       5. REAL-TIME DATABASE SYNCHRONIZATION
+       ========================================== */
+    let localFlightsMem = []; // Standby memory for fallback initialization
+
+    if (db) {
+      // Connect active document state hooks ordered by exact travel dates descending
+      const q = query(collection(db, "lettice_flights"), orderBy("date", "desc"));
+      onSnapshot(q, (snapshot) => {
+        const flights = [];
+        snapshot.forEach((doc) => {
+          flights.push({ id: doc.id, ...doc.data() });
+        });
+        renderAppDisplay(flights);
+      }, (err) => {
+        console.error("Firestore read fault:", err);
+        triggerToast("Storage key read unlinked. Validating parameters...");
+      });
+    } else {
+      // Initial render setup bypass for blank setup keys
+      renderAppDisplay([]);
+    }
+
+    /* ==========================================
+       6. CORE SUBMIT FORM INTERACTION HANDLER
+       ========================================== */
+    const form = document.getElementById('flight-form');
+    const loader = document.getElementById('map-loader');
+    const submitBtn = document.getElementById('submit-btn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const dateVal = document.getElementById('travel-date').value;
+      const originVal = document.getElementById('origin').value.trim();
+      const destVal = document.getElementById('destination').value.trim();
+
+      // Lock user interface parameters safely during compute loops
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `<span>Geocoding nodes...</span>`;
+      loader.classList.remove('opacity-0', 'pointer-events-none');
+
+      try {
+        // Run OpenStreetMap API spatial matrix translation calls
+        const originRes = await geocodeCity(originVal);
+        const destRes = await geocodeCity(destVal);
+
+        // Derive structural baseline numbers
+        const distances = calculateHaversine(originRes.lat, originRes.lon, destRes.lat, destRes.lon);
+
+        const payloadObj = {
+          date: dateVal,
+          originName: originRes.name,
+          destName: destRes.name,
+          originCoords: { lat: originRes.lat, lon: originRes.lon },
+          destCoords: { lat: destRes.lat, lon: destRes.lon },
+          distanceKm: distances.km,
+          distanceMiles: distances.miles,
+          createdAt: new Date().toISOString()
+        };
+
+        if (db) {
+          // Push strictly configured structured nodes safely directly to Cloud base
+          await addDoc(collection(db, "lettice_flights"), payloadObj);
+        } else {
+          // Push locally if Firebase config array parameters remain unentered
+          localFlightsMem.unshift({ id: String(Date.now()), ...payloadObj });
+          // Sort chronologically (newest top)
+          localFlightsMem.sort((a,b) => new Date(b.date) - new Date(a.date));
+          renderAppDisplay(localFlightsMem);
+        }
+
+        form.reset();
+        triggerConfetti();
+        triggerToast(`Victory logged! Added ${distances.km} km to her story.`);
+      } catch (err) {
+        alert(`Spatial query translation error: ${err.message}. Please double check city or airport names.`);
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<span>Save Victory to Log</span>`;
+        loader.classList.add('opacity-0', 'pointer-events-none');
+      }
+    });
+
+    // Populate input field date automagically with current system time strings
+    document.getElementById('travel-date').valueAsDate = new Date();
+  </script>
+</body>
+</html>
